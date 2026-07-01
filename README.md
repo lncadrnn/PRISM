@@ -73,8 +73,8 @@ PRISM reports **two orthogonal axes**:
 
 | Axis | Question answered | Source module | Colors |
 |---|---|---|---|
-| **Credibility** (●) | Is the *claim* true? | `text` | FAKE → red · REAL → green |
-| **Authenticity** (◆) | Is the *media* real? | `image` / `video` | AI → purple · HUMAN → blue |
+| **Credibility** | Is the *claim* true? | `text` | FAKE → red · REAL → green |
+| **Authenticity** | Is the *media* real? | `image` / `video` | AI → purple · HUMAN → blue |
 
 A real photo can carry a false claim; an AI image can illustrate a true one. An axis with no data for a given post is hidden automatically.
 
