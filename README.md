@@ -63,10 +63,10 @@ The extension passively scans posts on **Facebook, TikTok, X/Twitter, and Thread
 Every scanned post gets a **two-segment pill** in its top-right corner:
 
 ```
-┌─────────────────────────────┐
-│ ● FAKE 94%  │  ◆ AI 98%     │
-└─────────────────────────────┘
-  credibility     authenticity
+┌──────────────────────────┐
+│   FAKE 94%  │   AI 98%   |
+└──────────────────────────┘
+  credibility  authenticity
 ```
 
 PRISM reports **two orthogonal axes**:
