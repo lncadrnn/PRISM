@@ -17,6 +17,7 @@ Strategy (from PRISM research):
 
 import argparse
 import os
+import random
 import sys
 
 import torch
@@ -96,7 +97,11 @@ def main():
     train_n = len(full_ds) - val_n
 
     # Determine the split indices once, then apply them to both dataset variants.
+    # Shuffle before slicing: ImageForensicsDataset appends all "real" samples
+    # before all "fake" samples, so an unshuffled tail slice would make the
+    # validation split almost entirely one class.
     all_indices = list(range(len(full_ds)))
+    random.Random(42).shuffle(all_indices)
     train_indices = all_indices[:train_n]
     val_indices = all_indices[train_n:]
 
