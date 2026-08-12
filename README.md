@@ -25,30 +25,30 @@ PRISM scans social media content in real time and flags disinformation. Three in
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│  CLIENTS                                                           │
+│  CLIENTS                                                          │
 │  • Browser Extension (Manifest V3, JS)  — passive real-time scan  │
 │    Facebook · TikTok · X/Twitter · Threads                        │
-│  • Next.js Web App  — manual content submission + interactive demo │
+│  • Next.js Web App - manual content submission + interactive demo │
 └──────────────────────────────┬────────────────────────────────────┘
                                 │  POST /scan/extension
                                 ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│  FastAPI  — AI inference layer                                     │
-│  ┌──────────────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │  Text Module     │  │ Image Module │  │  Video Module     │   │
-│  │  DistilBERT-     │  │ CNN-ViT      │  │  Frame-level      │   │
-│  │  Tagalog         │  │ hybrid + CAM │  │  forensic engine  │   │
-│  │  + LIME/Anchors  │  │              │  │  (spatial+temp.)  │   │
-│  └────────┬─────────┘  └──────┬───────┘  └────────┬──────────┘   │
+│  FastAPI  — AI inference layer                                    │
+│  ┌──────────────────┐  ┌──────────────┐  ┌───────────────────┐    │
+│  │  Text Module     │  │ Image Module │  │  Video Module     │    │
+│  │  DistilBERT-     │  │ CNN-ViT      │  │  Frame-level      │    │
+│  │  Tagalog         │  │ hybrid + CAM │  │  forensic engine  │    │
+│  │  + LIME/Anchors  │  │              │  │  (spatial+temp.)  │    │
+│  └────────┬─────────┘  └──────┬───────┘  └────────┬──────────┘    │
 │           └───────────────────┴───────────────────┘               │
-│                               ▼                                    │
-│                  LATE FUSION (weighted average of scores)          │
-│                               ▼                                    │
-│               Unified credibility verdict + XAI payload            │
+│                               ▼                                   │
+│                  LATE FUSION (weighted average of scores)         │
+│                               ▼                                   │
+│               Unified credibility verdict + XAI payload           │
 └──────────────────────────────┬────────────────────────────────────┘
                                 ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│  Supabase  — Postgres storage, auth, realtime, Edge Functions      │
+│  Supabase  — Postgres storage, auth, realtime, Edge Functions     │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,18 +63,18 @@ The extension passively scans posts on **Facebook, TikTok, X/Twitter, and Thread
 Every scanned post gets a **two-segment pill** in its top-right corner:
 
 ```
-┌────────────────────────────┐
-│ ● FAKE 94%  │  ◆ AI 98%  │
-└────────────────────────────┘
-  credibility     authenticity
+┌──────────────────────────┐
+│   FAKE 94%  │   AI 98%   |
+└──────────────────────────┘
+  credibility  authenticity
 ```
 
 PRISM reports **two orthogonal axes**:
 
 | Axis | Question answered | Source module | Colors |
 |---|---|---|---|
-| **Credibility** (●) | Is the *claim* true? | `text` | FAKE → red · REAL → green |
-| **Authenticity** (◆) | Is the *media* real? | `image` / `video` | AI → purple · HUMAN → blue |
+| **Credibility** | Is the *claim* true? | `text` | FAKE → red · REAL → green |
+| **Authenticity** | Is the *media* real? | `image` / `video` | AI → purple · HUMAN → blue |
 
 A real photo can carry a false claim; an AI image can illustrate a true one. An axis with no data for a given post is hidden automatically.
 
