@@ -19,6 +19,7 @@ import argparse
 import os
 import random
 import sys
+import time
 
 import torch
 import torch.nn as nn
@@ -49,7 +50,9 @@ def parse_args():
 def train_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
-    for images, labels in loader:
+    n_batches = len(loader)
+    t0 = time.time()
+    for i, (images, labels) in enumerate(loader):
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
         logits = model(images)
@@ -59,6 +62,13 @@ def train_epoch(model, loader, criterion, optimizer, device):
         total_loss += loss.item() * len(labels)
         correct += (logits.argmax(1) == labels).sum().item()
         total += len(labels)
+        if i % 10 == 0 or i == n_batches - 1:
+            elapsed = time.time() - t0
+            print(
+                f"    batch {i+1}/{n_batches}  loss={loss.item():.4f}  "
+                f"elapsed={elapsed:.1f}s  ({elapsed / (i + 1):.2f}s/batch)",
+                flush=True,
+            )
     return total_loss / total, correct / total
 
 
@@ -158,7 +168,7 @@ def main():
         if val_f1 > best_f1:
             best_f1 = val_f1
             torch.save(model.state_dict(), best_path)
-            print(f"  → New best F1 {best_f1:.4f} — saved to {best_path}")
+            print(f"  -> New best F1 {best_f1:.4f} -- saved to {best_path}")
 
     print(f"\nTraining complete. Best val F1: {best_f1:.4f}")
     print("\nFinal classification report:")

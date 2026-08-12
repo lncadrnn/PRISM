@@ -46,7 +46,7 @@ layout.
 ### 2. Train (CPU-right-sized)
 
 ```bash
-python training/text/train.py ^
+python -m training.text.train ^
     --data data/text ^
     --epochs 4 --warmup-epochs 1 ^
     --batch 8 --max-length 128 ^
@@ -91,7 +91,7 @@ data/image/
 ### Train
 
 ```bash
-python training/image/train.py --data data/image --epochs 20 --batch 32 \
+python -m training.image.train --data data/image --epochs 20 --batch 32 \
     --output models/image_detector.pt
 ```
 
@@ -119,7 +119,7 @@ Each clip is sampled to 32 evenly-spaced frames at load time.
 ### Train
 
 ```bash
-python training/video/train.py --data data/video --epochs 20 --batch 8 \
+python -m training.video.train --data data/video --epochs 20 --batch 8 \
     --output models/video_detector.pt
 ```
 

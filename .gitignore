@@ -45,6 +45,7 @@ data/**
 !data/**/
 !data/**/.gitkeep
 *.csv.gz
+*.zip
 
 # Scratch / temp scripts
 api/smoke_*.py

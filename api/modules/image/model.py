@@ -12,6 +12,8 @@ The ViT was pre-trained with slightly different stats but fine-tunes well under
 ImageNet normalisation in practice; use a single preprocessing pipeline for simplicity.
 """
 
+import os
+
 import torch
 import torch.nn as nn
 from torchvision import models
@@ -21,6 +23,10 @@ from transformers import ViTModel
 CNN_FEAT_DIM = 1536   # EfficientNet-B3 output channels
 VIT_FEAT_DIM = 768    # ViT-B/16 hidden dim (CLS token)
 FUSED_DIM = CNN_FEAT_DIM + VIT_FEAT_DIM
+
+# Override with a local snapshot dir (e.g. an attached Kaggle dataset) when
+# training somewhere without internet access to the HuggingFace Hub.
+VIT_MODEL_PATH = os.environ.get("PRISM_VIT_MODEL_PATH", "google/vit-base-patch16-224")
 
 
 class CNNViTHybrid(nn.Module):
@@ -33,7 +39,7 @@ class CNNViTHybrid(nn.Module):
         self.cnn_pool = nn.AdaptiveAvgPool2d(1)
 
         # --- ViT branch ---
-        self.vit = ViTModel.from_pretrained("google/vit-base-patch16-224")
+        self.vit = ViTModel.from_pretrained(VIT_MODEL_PATH)
 
         if freeze_backbones:
             for p in self.cnn.parameters():
