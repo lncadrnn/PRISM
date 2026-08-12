@@ -16,6 +16,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://prism-detector.vercel.app"),
   title: "PRISM",
   description: "Progressive Real-Time Identification of Synthetic Media and Disinformation on Social Media Platforms.",
   keywords: ["PRISM", "AI-Generated Media Detection", "Synthetic Media Forensics", "Disinformation Detection", "CNN-ViT Hybrid", "Taglish NLP", "Social Media Shield"],
