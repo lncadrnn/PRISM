@@ -21,12 +21,16 @@ import {
   User,
   ExternalLink,
   ChevronRight,
-  FileText,
   Menu,
   X,
   Sun,
   Moon
 } from "lucide-react";
+
+// Same default the browser extension uses (extension/background/service-worker.js)
+// for the local PRISM FastAPI server; override via NEXT_PUBLIC_API_BASE for a
+// deployed backend.
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 // Types for interactive components
 interface SolutionCard {
@@ -51,10 +55,8 @@ interface DemoResult {
     details?: string[];
     jitterFrames?: number[];
     syncGap?: string;
-    taglishBert?: string;
-    limeHighlight?: { text: string; flag: boolean }[];
-    domainReputation?: string;
-    integrity?: string;
+    heatmapB64?: string | null;
+    signals?: string[];
   };
 }
 
@@ -81,14 +83,15 @@ export default function PrismLanding() {
   const footerRef = useRef<HTMLElement>(null);
   const [clockInference, setClockInference] = useState(0);
   const [selectedExtensionTab, setSelectedExtensionTab] = useState("passive");
-  const [demoText, setDemoText] = useState("Grabe, check this out! AI-generated image daw ito ni President na ginawa sa AI app kahapon. Totoo ba ito?");
   const [demoResult, setDemoResult] = useState<DemoResult | null>(null);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
 
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"text" | "photo" | "video" | "url">("text");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"photo" | "video">("photo");
   const [selectedPhotoSample, setSelectedPhotoSample] = useState<PhotoSample | null>(null);
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [selectedVideoSample, setSelectedVideoSample] = useState<VideoSample | null>(null);
-  const [demoUrl, setDemoUrl] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -128,12 +131,6 @@ export default function PrismLanding() {
     }
   };
 
-  const photoSamples = [
-    { id: 1, name: "GAN Portrait", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400", anomaly: "High Frequency GAN Artifact / Frequency Space Noise", confidence: 98.4, camRegion: { top: "15%", left: "20%", width: "50%", height: "40%" } },
-    { id: 2, name: "Latent Diffusion", url: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=400", anomaly: "Latent Diffusion / Eyebrow Inconsistency", confidence: 94.1, camRegion: { top: "25%", left: "15%", width: "70%", height: "30%" } },
-    { id: 3, name: "Casual GAN", url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=400", anomaly: "Boundary Mask Incongruity / Texture Warp", confidence: 95.3, camRegion: { top: "30%", left: "35%", width: "40%", height: "45%" } }
-  ];
-
   const videoSamples = [
     { id: 1, name: "Broadcast Synthetic Clip", anomaly: "Lip-Sync Phoneme Displacement", confidence: 96.8, latency: "890ms" },
     { id: 2, name: "Interview Jitter", anomaly: "Temporal Jitter & Face Warp", confidence: 91.2, latency: "1040ms" }
@@ -141,12 +138,41 @@ export default function PrismLanding() {
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-  const getDynamicLimeHighlight = (text: string) => {
-    const tokens = text.split(/(\s+)/);
-    return tokens.map((token) => {
-      const isSynthetic = /synthetic|ai|manipulated|fake|leak|generated|compromised|deepfake/i.test(token);
-      return { text: token, flag: isSynthetic };
-    });
+  const scanPhoto = async (file: File, previewUrl: string) => {
+    setDemoLoading(true);
+    setDemoError(null);
+    setDemoResult(null);
+    const t0 = performance.now();
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/scan/image`, { method: "POST", body: form });
+      if (!res.ok) {
+        throw new Error(`API returned ${res.status}`);
+      }
+      const data = await res.json();
+      const latencyMs = Math.round(performance.now() - t0);
+      setDemoResult({
+        verdict: data.label === "fake" ? "HIGH RISK" : "NEUTRAL/LOW RISK",
+        confidence: Math.round((data.confidence ?? 0) * 1000) / 10,
+        metrics: {
+          type: "photo",
+          latency: `${latencyMs}ms`,
+          anomaly: data.explanation?.note || data.explanation?.method || "",
+          url: previewUrl,
+          heatmapB64: data.explanation?.heatmap_b64 ?? null,
+          signals: data.explanation?.signals ?? [],
+        },
+      });
+    } catch (err) {
+      setDemoError(
+        err instanceof Error
+          ? `Could not reach the PRISM API (${err.message}). Is it running on ${API_BASE}?`
+          : "Could not reach the PRISM API."
+      );
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   const handleGlobalDragOver = (e: React.DragEvent) => {
@@ -170,34 +196,17 @@ export default function PrismLanding() {
         setActiveWorkspaceTab("photo");
         const reader = new FileReader();
         reader.onload = (event) => {
-          const sample = {
+          const previewUrl = event.target?.result as string;
+          setSelectedPhotoSample({
             id: 99,
             name: file.name,
-            url: event.target?.result as string,
-            anomaly: "Custom Scanned Image / Generative Noise Anomaly",
-            confidence: 95.7,
-            camRegion: { top: "20%", left: "25%", width: "50%", height: "45%" }
-          };
-          setSelectedPhotoSample(sample);
-          
-          // Trigger scan directly
-          setDemoLoading(true);
-          setDemoResult(null);
-          setTimeout(() => {
-            setDemoResult({
-              verdict: "HIGH RISK",
-              confidence: sample.confidence,
-              metrics: {
-                type: "photo",
-                latency: "380ms",
-                anomaly: sample.anomaly,
-                url: sample.url,
-                camRegion: sample.camRegion,
-                details: ["FREQ_NOISE: 91.2%", "ViT_ATTN_MAP: FLAG", "EDGE_WARPING: DETECTED"]
-              }
-            });
-            setDemoLoading(false);
-          }, 1500);
+            url: previewUrl,
+            anomaly: "",
+            confidence: 0,
+            camRegion: { top: "0%", left: "0%", width: "0%", height: "0%" },
+          });
+          setSelectedPhotoFile(file);
+          scanPhoto(file, previewUrl);
         };
         reader.readAsDataURL(file);
       } else if (fileType.startsWith("video/")) {
@@ -501,66 +510,53 @@ export default function PrismLanding() {
 
 
   // Handler for Interactive Demo Form
+  const handlePhotoFileChosen = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const previewUrl = event.target?.result as string;
+      setSelectedPhotoSample({
+        id: 99,
+        name: file.name,
+        url: previewUrl,
+        anomaly: "",
+        confidence: 0,
+        camRegion: { top: "0%", left: "0%", width: "0%", height: "0%" },
+      });
+      setSelectedPhotoFile(file);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleDemoVerify = (e: React.FormEvent) => {
     e.preventDefault();
+    setDemoError(null);
+
+    if (activeWorkspaceTab === "photo") {
+      if (!selectedPhotoFile || !selectedPhotoSample) {
+        setDemoError("Select or drop an image first.");
+        return;
+      }
+      scanPhoto(selectedPhotoFile, selectedPhotoSample.url);
+      return;
+    }
+
+    // Video module isn't wired to the API yet — keeps the illustrative demo.
     setDemoLoading(true);
     setDemoResult(null);
     setTimeout(() => {
-      if (activeWorkspaceTab === "text") {
-        const containsTaglish = /grabe|daw|ito|totoo|ba/i.test(demoText);
-        const containsSynthetic = /synthetic|ai|manipulated|fake|leak|generated/i.test(demoText);
-        setDemoResult({
-          verdict: containsSynthetic ? "HIGH RISK" : "NEUTRAL/LOW RISK",
-          confidence: containsSynthetic ? 96.8 : 72.4,
-          metrics: {
-            type: "text",
-            taglishBert: containsTaglish ? "Flagged: Taglish Disinformation Pattern" : "Neutral Syntax",
-            latency: "248ms",
-            limeHighlight: getDynamicLimeHighlight(demoText)
-          }
-        });
-      } else if (activeWorkspaceTab === "photo") {
-        const sample = selectedPhotoSample || photoSamples[0];
-        setDemoResult({
-          verdict: "HIGH RISK",
-          confidence: sample.confidence,
-          metrics: {
-            type: "photo",
-            latency: "380ms",
-            anomaly: sample.anomaly,
-            url: sample.url,
-            camRegion: sample.camRegion,
-            details: ["FREQ_NOISE: 91.2%", "ViT_ATTN_MAP: FLAG", "EDGE_WARPING: DETECTED"]
-          }
-        });
-      } else if (activeWorkspaceTab === "video") {
-        const sample = selectedVideoSample || videoSamples[0];
-        setDemoResult({
-          verdict: "HIGH RISK",
-          confidence: sample.confidence,
-          metrics: {
-            type: "video",
-            latency: sample.latency,
-            anomaly: sample.anomaly,
-            jitterFrames: [3, 5],
-            syncGap: "24ms",
-            details: ["TEMPORAL_JITTER: 89%", "ORAL_FORENSICS: FLAG", "PHONEME_GAP: 24ms"]
-          }
-        });
-      } else if (activeWorkspaceTab === "url") {
-        const isSuspicious = /synthetic|fake|leak|compromised/i.test(demoUrl) || demoUrl.length % 2 === 0;
-        setDemoResult({
-          verdict: isSuspicious ? "HIGH RISK" : "NEUTRAL/LOW RISK",
-          confidence: isSuspicious ? 92.4 : 14.8,
-          metrics: {
-            type: "url",
-            latency: "510ms",
-            domainReputation: isSuspicious ? "Low Trust Domain" : "Secure Domain",
-            integrity: isSuspicious ? "FAILED" : "PASSED",
-            details: ["METADATA_INTEGRITY: FLAG", "SHARING_SPEED: EXTREMELY HIGH", "PROPAGATION_SCORE: 88/100"]
-          }
-        });
-      }
+      const sample = selectedVideoSample || videoSamples[0];
+      setDemoResult({
+        verdict: "HIGH RISK",
+        confidence: sample.confidence,
+        metrics: {
+          type: "video",
+          latency: sample.latency,
+          anomaly: sample.anomaly,
+          jitterFrames: [3, 5],
+          syncGap: "24ms",
+          details: ["TEMPORAL_JITTER: 89%", "ORAL_FORENSICS: FLAG", "PHONEME_GAP: 24ms"]
+        }
+      });
       setDemoLoading(false);
     }, 1500);
   };
@@ -1290,10 +1286,8 @@ export default function PrismLanding() {
               {/* Tab Navigation */}
               <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200/60 dark:border-slate-800/60 pb-5">
                 {[
-                  { id: "text", label: "Text Anomaly", icon: FileText },
                   { id: "photo", label: "Photo Forensic", icon: Eye },
                   { id: "video", label: "Video Tracker", icon: Sliders },
-                  { id: "url", label: "URL Inspector", icon: ExternalLink },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeWorkspaceTab === tab.id;
@@ -1302,8 +1296,9 @@ export default function PrismLanding() {
                       key={tab.id}
                       type="button"
                       onClick={() => {
-                        setActiveWorkspaceTab(tab.id as "text" | "photo" | "video" | "url");
+                        setActiveWorkspaceTab(tab.id as "photo" | "video");
                         setDemoResult(null);
+                        setDemoError(null);
                       }}
                       className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
                         isActive 
@@ -1319,52 +1314,35 @@ export default function PrismLanding() {
               </div>
 
               <form onSubmit={handleDemoVerify} className="space-y-6">
-                {activeWorkspaceTab === "text" && (
-                  <div>
-                    <label className="block text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-                      Social Media Caption (Taglish supported)
-                    </label>
-                    <textarea 
-                      value={demoText}
-                      onChange={(e) => setDemoText(e.target.value)}
-                      rows={3}
-                      className="w-full bg-[#F8F6F0] dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-slate-950 dark:text-slate-50 placeholder-slate-400 dark:placeholder-slate-600 font-semibold focus:outline-none focus:border-[#3CC4DB] transition-all"
-                      placeholder="Paste news captions or social posts here..."
-                    />
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      <button 
-                        type="button"
-                        onClick={() => setDemoText("Sabi sa Twitter, cancelled raw ang klase sa buong bansa bukas gawa ng malaking bagyo na paparating. Legit ba?")}
-                        className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-[#0077BE] dark:hover:text-[#3CC4DB] border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-full transition-colors cursor-pointer"
-                      >
-                        Load Taglish News
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setDemoText("Grabe! Panuorin niyo ito, may inamin ang opisyal sa leak na ginawa gamit ang AI synthetic program.")}
-                        className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-[#0077BE] dark:hover:text-[#3CC4DB] border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-full transition-colors cursor-pointer"
-                      >
-                        Load AI Leak Text
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {activeWorkspaceTab === "photo" && (
                   <div className="space-y-4">
                     <label className="block text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                       Photo Upload & Verification
                     </label>
-                    
-                    {/* Drag-and-drop zone */}
-                    <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 bg-[#F8F6F0] dark:bg-slate-950 rounded-2xl p-6 flex flex-col items-center justify-center text-center hover:border-[#3CC4DB] transition-all relative overflow-hidden min-h-[160px]">
+
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handlePhotoFileChosen(file);
+                        e.target.value = "";
+                      }}
+                    />
+
+                    {/* Drag-and-drop / click-to-browse zone */}
+                    <div
+                      onClick={() => photoInputRef.current?.click()}
+                      className="cursor-pointer border-2 border-dashed border-slate-200 dark:border-slate-800 bg-[#F8F6F0] dark:bg-slate-950 rounded-2xl p-6 flex flex-col items-center justify-center text-center hover:border-[#3CC4DB] transition-all relative overflow-hidden min-h-[160px]"
+                    >
                       {selectedPhotoSample ? (
                         <div className="flex items-center gap-4 text-left w-full h-full relative z-10 p-2">
                           <img src={selectedPhotoSample.url} className="h-28 w-24 object-cover rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm" alt="Selected Preview" />
                           <div>
                             <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{selectedPhotoSample.name}</div>
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">{selectedPhotoSample.anomaly}</div>
-                            <div className="text-[10px] text-[#DC143C] font-mono font-bold mt-1">Ready to scan // Click Run Forensic Scan</div>
+                            <div className="text-[10px] text-[#0077BE] dark:text-[#3CC4DB] font-mono font-bold mt-1">Click Run Forensic Scan // or click here to pick another image</div>
                           </div>
                         </div>
                       ) : (
@@ -1395,21 +1373,9 @@ export default function PrismLanding() {
                   </div>
                 )}
 
-                {activeWorkspaceTab === "url" && (
-                  <div className="space-y-4">
-                    <label className="block text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                      Web URL Scanner (Social Media Link)
-                    </label>
-                    <div className="relative flex items-center">
-                      <ExternalLink className="absolute left-4 w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <input 
-                        type="text" 
-                        value={demoUrl}
-                        onChange={(e) => setDemoUrl(e.target.value)}
-                        placeholder="https://facebook.com/watch/post_id_91823..." 
-                        className="w-full bg-[#F8F6F0] dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-full pl-11 pr-6 py-3.5 text-slate-900 dark:text-slate-50 focus:outline-none focus:border-[#3CC4DB] transition-all font-semibold text-sm" 
-                      />
-                    </div>
+                {demoError && (
+                  <div className="text-xs font-bold text-[#DC143C] bg-[#DC143C]/10 border border-[#DC143C]/30 rounded-2xl px-4 py-3">
+                    {demoError}
                   </div>
                 )}
 
@@ -1509,71 +1475,39 @@ export default function PrismLanding() {
                     {/* Explanations & Visualizations container */}
                     <div className="w-full flex-1 flex flex-col justify-center border-t border-slate-200/60 dark:border-slate-800/60 pt-6">
                       {/* Contextual Visualizations based on input type */}
-                      {demoResult.metrics.type === "text" && (
-                        <div className="space-y-4">
-                          <div>
-                            <h4 className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-                              LIME Text Highlighting (Explainable Reason Parser)
-                            </h4>
-                            <div className="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 font-medium text-slate-800 dark:text-slate-200 leading-relaxed text-sm max-h-[200px] overflow-y-auto">
-                              {demoResult.metrics.limeHighlight?.map((word, i) => (
-                                <span 
-                                  key={i} 
-                                  className={word.flag ? "bg-[#DC143C]/20 text-[#DC143C] font-semibold border-b border-[#DC143C] px-1 rounded-sm shadow-sm" : ""}
-                                >
-                                  {word.text}
-                                </span>
-                              ))}
-                            </div>
-                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium mt-2 block italic leading-snug">
-                              Highlighted sections represent token-sequences carrying high statistical weights for the synthetic content classifier.
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
                       {demoResult.metrics.type === "photo" && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-                          {/* Visual CAM Heatmap Overlay */}
+                          {/* Real GradCAM heatmap overlay from the API, if the local fine-tuned model produced one */}
                           <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-950 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner group">
                             <img src={demoResult.metrics.url || undefined} className="w-full h-full object-cover" alt="Scanned Target" />
-                            
-                            {/* Laser scanner effect */}
-                            <div className="absolute inset-x-0 h-0.5 bg-[#3CC4DB] shadow-[0_0_12px_rgba(60,196,219,0.8)] animate-bounce z-20" style={{ top: "35%", animationDuration: "3s" }} />
-                            
-                            {/* Bounding box around anomaly */}
-                            <div 
-                              style={{
-                                top: demoResult.metrics.camRegion?.top,
-                                left: demoResult.metrics.camRegion?.left,
-                                width: demoResult.metrics.camRegion?.width,
-                                height: demoResult.metrics.camRegion?.height,
-                              }}
-                              className="absolute border-2 border-dashed border-[#DC143C] z-10 rounded-full bg-radial from-[#DC143C]/40 via-transparent to-transparent animate-pulse"
-                            />
 
-                            <span className="absolute bottom-3 left-3 bg-[#DC143C] text-white text-[8px] font-mono font-bold tracking-widest px-2 py-0.5 rounded shadow">
-                              CAM FLAG // LOCAL ANOMALY
+                            {demoResult.metrics.heatmapB64 && (
+                              <img
+                                src={`data:image/png;base64,${demoResult.metrics.heatmapB64}`}
+                                className="absolute inset-0 w-full h-full object-cover opacity-70 mix-blend-multiply"
+                                alt="GradCAM heatmap"
+                              />
+                            )}
+
+                            <span className={`absolute bottom-3 left-3 text-white text-[8px] font-mono font-bold tracking-widest px-2 py-0.5 rounded shadow ${demoResult.verdict === "HIGH RISK" ? "bg-[#DC143C]" : "bg-green-600"}`}>
+                              {demoResult.metrics.heatmapB64 ? "GRADCAM // CNN-VIT" : "PRETRAINED VIT SCAN"}
                             </span>
                           </div>
 
-                          {/* Metrics Checklist */}
+                          {/* Real forensic signals from the API response */}
                           <div className="space-y-3">
                             <h4 className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                              CNN-ViT Diagnostic Metrics
+                              Forensic Signals
                             </h4>
+                            {demoResult.metrics.anomaly && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 italic leading-snug">
+                                {demoResult.metrics.anomaly}
+                              </p>
+                            )}
                             <div className="space-y-1.5">
-                              {[
-                                { label: "Generative Grid Resonation", val: "91.2%", alert: true },
-                                { label: "Iris Reflection Coherence", val: "Asymmetric", alert: true },
-                                { label: "Boundary Alignment", val: "Failed", alert: true },
-                                { label: "Color Space Dist.", val: "Normal", alert: false },
-                              ].map((m, idx) => (
-                                <div key={idx} className="flex justify-between items-center p-2 bg-white dark:bg-slate-950 border border-slate-200/60 dark:border-slate-850 rounded-xl">
-                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">{m.label}</span>
-                                  <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${m.alert ? "bg-[#DC143C]/10 text-[#DC143C]" : "bg-green-100 text-green-700"}`}>
-                                    {m.val}
-                                  </span>
+                              {(demoResult.metrics.signals ?? []).map((signal, idx) => (
+                                <div key={idx} className="flex items-start gap-2 p-2 bg-white dark:bg-slate-950 border border-slate-200/60 dark:border-slate-850 rounded-xl">
+                                  <span className="text-[10px] font-medium text-slate-700 dark:text-slate-300">{signal}</span>
                                 </div>
                               ))}
                             </div>
@@ -1626,38 +1560,6 @@ export default function PrismLanding() {
                         </div>
                       )}
 
-                      {demoResult.metrics.type === "url" && (
-                        <div className="space-y-4">
-                          <div className="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/60 dark:border-slate-850 grid grid-cols-3 gap-2 text-center shadow-sm">
-                            <div>
-                              <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Domain Rep</span>
-                              <span className={`text-[10px] font-bold block mt-1 ${demoResult.metrics.integrity === "PASSED" ? "text-green-600" : "text-[#DC143C]"}`}>{demoResult.metrics.domainReputation?.split(" ")[0]}</span>
-                            </div>
-                            <div>
-                              <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Integrity Checks</span>
-                              <span className={`text-[10px] font-black block mt-1 ${demoResult.metrics.integrity === "PASSED" ? "text-green-600" : "text-[#DC143C]"}`}>{demoResult.metrics.integrity}</span>
-                            </div>
-                            <div>
-                              <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Classification Score</span>
-                              <span className="text-[10px] font-bold text-slate-800 block mt-1 tabular-nums">{demoResult.confidence}%</span>
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <h4 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest mb-2">
-                              Late-Fusion Metadata Auditing
-                            </h4>
-                            <div className="p-3 bg-slate-950 text-slate-300 font-mono text-[9px] rounded-2xl border border-slate-800 space-y-1 max-h-[120px] overflow-y-auto">
-                              {demoResult.metrics.details?.map((item: string, idx: number) => (
-                                <div key={idx} className="flex gap-2">
-                                  <span className="text-slate-500">&gt;</span>
-                                  <span>{item}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </motion.div>
                 ) : (
