@@ -28,6 +28,12 @@ DATASET_PATH = "data/image"                   # must contain real/ and fake/
 OUTPUT_CKPT = "models/image_detector.pt"      # where the trainer writes
 OUTPUT_COPY = "/content/drive/MyDrive/image_detector.pt"  # persistent copy
 
+# To continue a run cut off by a Kaggle/Colab session limit: copy the
+# <output>.train_state.pt you saved off last session back to this path
+# (e.g. from OUTPUT_COPY + ".train_state.pt" on Drive) before running this
+# script again. See training/README.md "Resuming across Kaggle sessions".
+RESUME_PATH = OUTPUT_CKPT + ".train_state.pt"  # used only if the file exists
+
 EPOCHS = 20
 BATCH = 32
 LR = 2e-4
@@ -54,27 +60,38 @@ def main() -> None:
                 f"Expected {DATASET_PATH}/real/ and {DATASET_PATH}/fake/ with images."
             )
 
-    # 3. Call the existing trainer.
-    sh([
+    # 3. Call the existing trainer, resuming automatically if a train-state
+    #    file is present (e.g. copied back in from a prior cut-off session).
+    cmd = [
         sys.executable, os.path.join("training", "image", "train.py"),
         "--data", DATASET_PATH,
         "--epochs", str(EPOCHS),
         "--batch", str(BATCH),
         "--lr", str(LR),
         "--output", OUTPUT_CKPT,
-    ])
+    ]
+    if os.path.isfile(RESUME_PATH):
+        print(f"Found {RESUME_PATH} -- resuming from it")
+        cmd += ["--resume", RESUME_PATH]
+    sh(cmd)
 
-    # 4. Copy the checkpoint somewhere persistent (Drive) if mounted.
-    if os.path.isfile(OUTPUT_CKPT):
-        os.makedirs(os.path.dirname(OUTPUT_COPY) or ".", exist_ok=True)
-        try:
-            shutil.copy(OUTPUT_CKPT, OUTPUT_COPY)
-            print(f"Copied checkpoint -> {OUTPUT_COPY}")
-        except (OSError, FileNotFoundError) as e:
-            print(f"Could not copy to {OUTPUT_COPY} ({e}); "
-                  f"download {OUTPUT_CKPT} manually.")
-    else:
-        print(f"WARNING: trainer did not produce {OUTPUT_CKPT}")
+    # 4. Copy the checkpoint AND the resume state somewhere persistent (Drive)
+    #    if mounted. The resume state is what lets a cut-off session continue
+    #    instead of restarting from epoch 1 — see training/README.md.
+    train_state = OUTPUT_CKPT + ".train_state.pt"
+    for src, dst in (
+        (OUTPUT_CKPT, OUTPUT_COPY),
+        (train_state, OUTPUT_COPY + ".train_state.pt"),
+    ):
+        if os.path.isfile(src):
+            os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+            try:
+                shutil.copy(src, dst)
+                print(f"Copied {src} -> {dst}")
+            except (OSError, FileNotFoundError) as e:
+                print(f"Could not copy {src} to {dst} ({e}); download it manually.")
+        else:
+            print(f"WARNING: trainer did not produce {src}")
 
 
 if __name__ == "__main__":

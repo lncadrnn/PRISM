@@ -21,6 +21,7 @@ detection-tl as the pretrained fallback before custom training is complete.
 
 import io
 import os
+import re
 
 import numpy as np
 import torch
@@ -47,6 +48,43 @@ _HUB_MODEL_ID = "Organika/sdxl-detector"
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _MODEL_PATH_DEFAULT = os.path.join(_PROJECT_ROOT, "models", "image_detector.pt")
+
+# Older `transformers` releases (e.g. the version used to train on Kaggle)
+# name ViT encoder-layer submodules differently from newer ones (query/key/value
+# -> q_proj/k_proj/v_proj, output.dense -> o_proj, intermediate/output.dense ->
+# mlp.fc1/fc2). Remap old-style checkpoint keys to whatever this install's
+# ViTModel expects, so a checkpoint trained under any transformers version loads.
+_VIT_QKV_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.attention\.attention\.(query|key|value)\.(weight|bias)")
+_VIT_ATTN_OUT_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.attention\.output\.dense\.(weight|bias)")
+_VIT_MLP_IN_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.intermediate\.dense\.(weight|bias)")
+_VIT_MLP_OUT_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.output\.dense\.(weight|bias)")
+_VIT_LN_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.(layernorm_before|layernorm_after)\.(weight|bias)")
+
+
+def _remap_legacy_vit_key(key: str) -> str:
+    m = _VIT_QKV_RE.match(key)
+    if m:
+        i, qkv, wb = m.groups()
+        proj = {"query": "q_proj", "key": "k_proj", "value": "v_proj"}[qkv]
+        return f"vit.layers.{i}.attention.{proj}.{wb}"
+    m = _VIT_ATTN_OUT_RE.match(key)
+    if m:
+        i, wb = m.groups()
+        return f"vit.layers.{i}.attention.o_proj.{wb}"
+    m = _VIT_MLP_IN_RE.match(key)
+    if m:
+        i, wb = m.groups()
+        return f"vit.layers.{i}.mlp.fc1.{wb}"
+    m = _VIT_MLP_OUT_RE.match(key)
+    if m:
+        i, wb = m.groups()
+        return f"vit.layers.{i}.mlp.fc2.{wb}"
+    m = _VIT_LN_RE.match(key)
+    if m:
+        i, ln, wb = m.groups()
+        return f"vit.layers.{i}.{ln}.{wb}"
+    return key
+
 
 # ImageNet normalisation for the CNN-ViT hybrid (local fine-tuned only)
 _TRANSFORM = transforms.Compose([
@@ -114,7 +152,11 @@ class ImageDetector:
             self.model = CNNViTHybrid()
             self.model.to(self.device)
             state = torch.load(path, map_location=self.device, weights_only=True)
-            self.model.load_state_dict(state)
+            try:
+                self.model.load_state_dict(state)
+            except RuntimeError:
+                state = {_remap_legacy_vit_key(k): v for k, v in state.items()}
+                self.model.load_state_dict(state)
             self.model.eval()
             self.gradcam = GradCAM(self.model.cnn_last_layer())
             self.pipe = None

@@ -9,10 +9,23 @@ Usage:
         --lr 2e-4 \
         --output models/image_detector.pt
 
+Resuming a run that got cut off (Kaggle/Colab session limit, crash, etc.):
+    python training/image/train.py \
+        --data data/image --epochs 20 --batch 32 --lr 2e-4 \
+        --output models/image_detector.pt \
+        --resume models/image_detector.train_state.pt
+
 Strategy (from PRISM research):
   1. Freeze both backbones for the first N warmup epochs — train only the fusion head.
   2. Unfreeze and fine-tune end-to-end with a lower LR.
   3. Save the checkpoint with the best validation F1.
+
+Checkpointing: `--output` always holds the best-val-F1 model weights only (what
+`api/modules/image/detector.py` loads for inference). A second file,
+`<output>.train_state.pt`, is overwritten after *every* epoch (regardless of
+whether it improved F1) with the full training state (model/optimizer/
+scheduler/AMP scaler, epoch number, best F1 so far) so a cut-off run can
+resume from the last completed epoch instead of restarting from scratch.
 """
 
 import argparse
@@ -43,11 +56,13 @@ def parse_args():
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--val-split", type=float, default=0.15)
     p.add_argument("--output", default="models/image_detector.pt")
+    p.add_argument("--resume", default=None,
+                   help="Path to a <output>.train_state.pt to continue an interrupted run")
     p.add_argument("--device", default=None)
     return p.parse_args()
 
 
-def train_epoch(model, loader, criterion, optimizer, device):
+def train_epoch(model, loader, criterion, optimizer, device, scaler):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
     n_batches = len(loader)
@@ -55,10 +70,12 @@ def train_epoch(model, loader, criterion, optimizer, device):
     for i, (images, labels) in enumerate(loader):
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
-        logits = model(images)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+        with torch.autocast(device_type="cuda", enabled=(device == "cuda")):
+            logits = model(images)
+            loss = criterion(logits, labels)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         total_loss += loss.item() * len(labels)
         correct += (logits.argmax(1) == labels).sum().item()
         total += len(labels)
@@ -86,6 +103,26 @@ def eval_epoch(model, loader, criterion, device):
     n = len(all_labels)
     f1 = f1_score(all_labels, all_preds, average="binary")
     return total_loss / n, f1, all_preds, all_labels
+
+
+def make_optimizer_and_scheduler(model, args, phase):
+    """phase: 'warmup' (head-only) or 'finetune' (all params, lr * 0.1).
+
+    Always constructed fresh (last_epoch=-1) — when resuming, the caller
+    restores exact state via optimizer.load_state_dict()/scheduler.load_state_dict()
+    right after, which also fixes up the internal epoch counters and LR.
+    """
+    if phase == "warmup":
+        optimizer = torch.optim.AdamW(
+            filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr * 0.1)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs - args.warmup_epochs
+        )
+    return optimizer, scheduler
 
 
 def main():
@@ -135,40 +172,69 @@ def main():
     # --- Model ---
     model = CNNViTHybrid(freeze_backbones=True).to(device)
 
-    # Phase 1: head-only warmup
-    optimizer = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr
-    )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-
     best_f1, best_path = 0.0, args.output
     os.makedirs(os.path.dirname(best_path) or ".", exist_ok=True)
+    train_state_path = args.resume or (best_path + ".train_state.pt")
 
-    for epoch in range(1, args.epochs + 1):
-        # Unfreeze backbones after warmup
+    scaler = torch.amp.GradScaler(enabled=(device == "cuda"))
+    start_epoch = 1
+
+    if args.resume and os.path.isfile(args.resume):
+        print(f"Resuming from {args.resume}")
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state"])
+        best_f1 = ckpt["best_f1"]
+        start_epoch = ckpt["epoch"] + 1
+        phase = ckpt["phase"]
+
+        if phase == "finetune":
+            for p in model.parameters():
+                p.requires_grad = True
+        optimizer, scheduler = make_optimizer_and_scheduler(model, args, phase)
+        optimizer.load_state_dict(ckpt["optimizer_state"])
+        scheduler.load_state_dict(ckpt["scheduler_state"])
+        scaler.load_state_dict(ckpt["scaler_state"])
+        print(f"  -> resuming at epoch {start_epoch}, phase={phase}, best_f1={best_f1:.4f}")
+    else:
+        optimizer, scheduler = make_optimizer_and_scheduler(model, args, "warmup")
+
+    for epoch in range(start_epoch, args.epochs + 1):
+        # Unfreeze backbones after warmup (only fires if we haven't already
+        # crossed this boundary in a previous, resumed session).
         if epoch == args.warmup_epochs + 1:
             print("Unfreezing backbones for end-to-end fine-tuning")
             for p in model.parameters():
                 p.requires_grad = True
-            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr * 0.1)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=args.epochs - args.warmup_epochs
-            )
+            optimizer, scheduler = make_optimizer_and_scheduler(model, args, "finetune")
 
-        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device, scaler)
         val_loss, val_f1, preds, labels = eval_epoch(model, val_loader, criterion, device)
         scheduler.step()
 
         print(
             f"Epoch {epoch:02d}/{args.epochs}  "
             f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
-            f"val_loss={val_loss:.4f}  val_f1={val_f1:.4f}"
+            f"val_loss={val_loss:.4f}  val_f1={val_f1:.4f}",
+            flush=True,
         )
 
         if val_f1 > best_f1:
             best_f1 = val_f1
             torch.save(model.state_dict(), best_path)
             print(f"  -> New best F1 {best_f1:.4f} -- saved to {best_path}")
+
+        # Persist full training state every epoch so a cut-off run (Kaggle/Colab
+        # session limit, crash, etc.) can resume instead of starting over.
+        phase = "finetune" if epoch >= args.warmup_epochs + 1 else "warmup"
+        torch.save({
+            "epoch": epoch,
+            "phase": phase,
+            "best_f1": best_f1,
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict(),
+            "scaler_state": scaler.state_dict(),
+        }, best_path + ".train_state.pt")
 
     print(f"\nTraining complete. Best val F1: {best_f1:.4f}")
     print("\nFinal classification report:")

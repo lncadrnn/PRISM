@@ -97,6 +97,56 @@ python -m training.image.train --data data/image --epochs 20 --batch 32 \
 
 Or paste `training/image/train_image_colab.py` into a Colab cell (see its header).
 
+### Resuming across Kaggle sessions (important)
+
+Kaggle has **no pause** — a notebook session is either running or stopped, with
+a ~9-12h wall-time limit either way. Stopping kills the kernel; anything not
+written to disk (optimizer state, exact epoch) is lost. `train.py` handles
+this:
+
+- `--output` (e.g. `models/image_detector.pt`) always holds just the
+  best-val-F1 model weights — the file `api/modules/image/detector.py` loads
+  for inference.
+- A second file, `<output>.train_state.pt` (e.g.
+  `models/image_detector.pt.train_state.pt`), is overwritten after **every**
+  epoch (not just improvements) with the full state: model, optimizer,
+  scheduler, AMP scaler, epoch number, best F1 so far, and warmup/finetune
+  phase.
+
+To continue a run that got cut off:
+
+1. Before stopping/removing a Kaggle session, download **both** files from the
+   Output tab (`kaggle kernels output <user>/<kernel> -p <dest>`, or the
+   per-file download button) — not just the best-F1 checkpoint.
+2. Next session, upload `<output>.train_state.pt` back into the working dir
+   (or wherever `--resume` points), then run:
+   ```bash
+   python -m training.image.train \
+       --data data/image --epochs 20 --batch 32 \
+       --output models/image_detector.pt \
+       --resume models/image_detector.pt.train_state.pt
+   ```
+   It reloads the exact epoch/optimizer/scheduler state and continues from
+   the next epoch — `--epochs`/`--warmup-epochs`/`--batch`/`--lr` should match
+   the original run's values.
+3. If a Kaggle session hangs (log output frozen for way longer than the
+   ~batch-print interval, e.g. no new line for 10x the normal per-10-batch
+   gap) while the session clock is still advancing, that's a genuine hang, not
+   slow training — check the Output tab for `<output>.train_state.pt` first
+   (it may already reflect a completed epoch even if the run looks stuck),
+   download it, then stop the session and resume from that file rather than
+   waiting indefinitely.
+
+**A checkpoint saved with a different `transformers` version than your local
+install may fail to load with a `RuntimeError` on `load_state_dict`** — HF's
+`ViTModel` internals renamed attention submodules across versions (e.g.
+`attention.attention.query` → `attention.q_proj`). `detector.py` already
+handles this automatically (remaps legacy key names on load failure before
+retrying), so this should be transparent — but if you see missing/unexpected
+key errors here in `train.py` too (e.g. loading a `--resume` state saved under
+a different `transformers` version), the same remap logic would need porting
+into the resume path.
+
 ---
 
 ## Video module (Colab / Kaggle GPU)
