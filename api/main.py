@@ -18,6 +18,8 @@ import ipaddress
 import os
 import socket
 import tempfile
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import Callable, Optional
 from urllib.parse import urlparse
@@ -81,15 +83,59 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Least-privilege CORS: only the local web app and any Chrome extension origin.
-# (The unpacked extension's ID is install-specific, so allow the scheme via regex
-# rather than the wildcard "*" the audit flagged.)
+# Least-privilege CORS: local dev, any Chrome/Firefox extension origin (install-
+# specific IDs, so allow the scheme via regex rather than a wildcard "*"), and
+# the production web deployment. Preview-deployment URLs (prism-detector-<hash>
+# -<team>.vercel.app) aren't covered here — add them explicitly if needed rather
+# than widening this to all of *.vercel.app, which anyone can deploy to.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^(chrome-extension://.*|moz-extension://.*|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
+    allow_origin_regex=(
+        r"^(chrome-extension://.*|moz-extension://.*|"
+        r"http://(localhost|127\.0\.0\.1)(:\d+)?|"
+        r"https://prism-detector\.vercel\.app)$"
+    ),
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+# Fixed-window per-client limit on the inference routes, so a public deployment
+# can't be hammered into running up compute/hosting costs. In-memory and
+# per-process — fine for a single-instance deployment (e.g. one HF Space
+# container); a multi-worker/multi-replica deployment would need a shared
+# store (e.g. Redis) instead since each process would track its own counts.
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("PRISM_RATE_LIMIT_PER_MINUTE", "20"))
+_RATE_LIMITED_PATHS = {"/scan", "/scan/text", "/scan/image", "/scan/video", "/scan/extension"}
+_request_log: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    # Behind a reverse proxy (Vercel, HF Spaces, etc.) the real client address
+    # is in X-Forwarded-For, not request.client.
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    if request.url.path in _RATE_LIMITED_PATHS:
+        now = time.monotonic()
+        log = _request_log[_client_ip(request)]
+        while log and now - log[0] > _RATE_LIMIT_WINDOW_SECONDS:
+            log.popleft()
+        if len(log) >= _RATE_LIMIT_MAX_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests — please slow down and try again shortly."},
+            )
+        log.append(now)
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)
