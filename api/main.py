@@ -13,6 +13,8 @@ Routes:
     POST /scan/extension  -- JSON multimodal verdict for the browser extension
 """
 
+from __future__ import annotations
+
 import io
 import ipaddress
 import os
@@ -31,11 +33,28 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from PIL import Image
 
-from modules.image import ImageDetector
-from modules.text import TextDetector
-from modules.video import VideoDetector
 from fusion import fuse
 from schemas.verdict import ScanResponse, VerdictResponse
+
+# Which modules this process loads. Defaults to all three for local dev
+# (`python main.py`); set to a subset (e.g. "image") when deploying each
+# module as its own low-memory Render service. Gating these as conditional
+# imports (not just conditional instantiation below) matters: an unconditional
+# `from modules.text import TextDetector` pulls in that module's entire
+# dependency chain (transformers, and via the LIME explainer: matplotlib,
+# scikit-learn, scikit-image, scipy) into memory at process start regardless
+# of whether TextDetector is ever instantiated — a real contributor to OOM
+# kills on Render's 512MB free instance.
+_ENABLED_MODULES = {
+    m.strip() for m in os.environ.get("PRISM_ENABLED_MODULES", "image,text,video").split(",") if m.strip()
+}
+
+if "image" in _ENABLED_MODULES:
+    from modules.image import ImageDetector
+if "text" in _ENABLED_MODULES:
+    from modules.text import TextDetector
+if "video" in _ENABLED_MODULES:
+    from modules.video import VideoDetector
 
 
 # ---------------------------------------------------------------------------
@@ -62,14 +81,6 @@ _SCRAPE_HEADERS = {
 detector: Optional[ImageDetector] = None
 text_detector: Optional[TextDetector] = None
 video_detector: Optional[VideoDetector] = None
-
-# Which modules this process loads. Defaults to all three for local dev
-# (`python main.py`); set to a subset (e.g. "image") when deploying each
-# module as its own low-memory Render service — a service not listed here
-# skips that detector entirely instead of loading it and getting OOM-killed.
-_ENABLED_MODULES = {
-    m.strip() for m in os.environ.get("PRISM_ENABLED_MODULES", "image,text,video").split(",") if m.strip()
-}
 
 
 @asynccontextmanager
