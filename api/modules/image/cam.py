@@ -34,7 +34,7 @@ class GradCAM:
             return None
         weights = self._gradients.mean(dim=(2, 3), keepdim=True)   # (B, C, 1, 1)
         cam = (weights * self._activations).sum(dim=1, keepdim=True)  # (B, 1, H, W)
-        cam = torch.relu(cam).squeeze().cpu().numpy()                 # (H, W)
+        cam = torch.relu(cam).squeeze().cpu().float().numpy()         # (H, W) — cv2 has no float16 resize kernel
         lo, hi = cam.min(), cam.max()
         if hi > lo:
             cam = (cam - lo) / (hi - lo)
