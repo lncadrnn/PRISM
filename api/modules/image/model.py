@@ -17,7 +17,7 @@ import os
 import torch
 import torch.nn as nn
 from torchvision import models
-from transformers import ViTModel
+from transformers import ViTConfig, ViTModel
 
 
 CNN_FEAT_DIM = 1536   # EfficientNet-B3 output channels
@@ -30,16 +30,31 @@ VIT_MODEL_PATH = os.environ.get("PRISM_VIT_MODEL_PATH", "google/vit-base-patch16
 
 
 class CNNViTHybrid(nn.Module):
-    def __init__(self, num_classes: int = 2, freeze_backbones: bool = False):
+    def __init__(self, num_classes: int = 2, freeze_backbones: bool = False, pretrained: bool = True):
+        """
+        pretrained : bool
+            True (default): initialise both backbones from their ImageNet
+            checkpoints — what training needs to fine-tune from. False: build
+            the same architecture with random init and skip those downloads
+            entirely — for inference call sites that immediately overwrite
+            every weight via load_state_dict() anyway (see ImageDetector),
+            where downloading ~380MB of pretrained weights just to discard
+            them was wasted bandwidth/memory and a real OOM contributor on
+            low-RAM hosts.
+        """
         super().__init__()
 
         # --- CNN branch ---
-        eff = models.efficientnet_b3(weights=models.EfficientNet_B3_Weights.IMAGENET1K_V1)
+        eff_weights = models.EfficientNet_B3_Weights.IMAGENET1K_V1 if pretrained else None
+        eff = models.efficientnet_b3(weights=eff_weights)
         self.cnn = eff.features          # Sequential; output (B, 1536, H/32, W/32)
         self.cnn_pool = nn.AdaptiveAvgPool2d(1)
 
         # --- ViT branch ---
-        self.vit = ViTModel.from_pretrained(VIT_MODEL_PATH)
+        if pretrained:
+            self.vit = ViTModel.from_pretrained(VIT_MODEL_PATH)
+        else:
+            self.vit = ViTModel(ViTConfig.from_pretrained(VIT_MODEL_PATH))
 
         if freeze_backbones:
             for p in self.cnn.parameters():

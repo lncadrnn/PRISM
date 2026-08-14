@@ -179,7 +179,10 @@ class ImageDetector:
         path = _resolve_checkpoint_path(model_path, self._fp16)
         if path:
             self.mode = "local"
-            self.model = CNNViTHybrid()
+            # pretrained=False: about to load_state_dict() a full fine-tuned
+            # checkpoint immediately below, so skip downloading the ImageNet
+            # backbones only to discard them (see CNNViTHybrid docstring).
+            self.model = CNNViTHybrid(pretrained=False)
             if self._fp16:
                 self.model = self.model.half()
             self.model.to(self.device)
