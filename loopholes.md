@@ -60,6 +60,27 @@ AI image that has nothing to do with the claim's truth.
 This isn't a hypothetical edge case — it's the direct, structural consequence
 of averaging two measurements of different things.
 
+## 1a. A second averaging error, same shape: the text module's own architecture
+
+Not a fusion bug this time, but the same underlying pattern — a plan that
+distinguishes two things carefully, and an implementation that quietly
+collapses them. CLAUDE.md specifies the text module as a **project fine-tune**
+of DistilBERT-Tagalog on Vera Files/AFP/FakeNewsNet data, chosen specifically
+for its small size (~40% of teacher) to hit real-time latency on consumer
+hardware. What actually runs in production (`api/modules/text/model.py`
+`MODEL_ID`, `api/modules/text/detector.py`) is the unmodified third-party hub
+checkpoint `iceman2434/xlm-roberta-base-fake-news-detection-tl` — an
+XLM-RoBERTa-**base** model, ~3x larger than a distilled model, never fine-tuned
+by this project on any Taglish/Vera-Files data. `models/text/` never held a
+real checkpoint. `training/text/train.py` even contains a warning
+acknowledging a checkpoint trained on a different backbone isn't loadable by
+the current inference `TextDetector` — i.e. the divergence is known, not
+accidental. **Recommendation:** treat this the same way as point 1 —either
+update CLAUDE.md to state the real production backbone and drop the
+DistilBERT-Tagalog claim, or actually run the fine-tune/distillation step
+before a defense, and measure latency against the <2s budget once you do,
+since XLM-R-base is a real risk to that number on i5/Ryzen5-class hardware.
+
 ## 2. The fix already half-exists, but isn't finished
 
 The extension's two-axis badge design (credibility segment + authenticity
@@ -170,3 +191,81 @@ single verdict, or at least stop calling it "credibility," and (b) either wire
 the video module into the extension's real-time path for real, or explicitly
 scope the thesis to say the passive-scanning flow currently uses
 image-based authenticity as a proxy for video.
+
+---
+
+## 8. Loopholes surfaced by the full-repo audit + the Render deployment saga
+
+A separate full-repo audit (frontend/backend/QA) plus the Render.com
+deployment attempt (`docs/render-deployment-log.md`) turned up more gaps in
+the same spirit as points 1-7: places where the plan says one thing and the
+shipped code does another, or where a real security/reliability hole exists
+underneath a feature that otherwise "works." Concrete fixes below, not
+repeated here in full — see `PROBLEMS.md` for the complete unresolved-findings
+list this section summarizes.
+
+**Security holes in `api/main.py` that undercut the "decision-support, not
+authoritative" posture (point 7 above):** the SSRF guard on `/scan/extension`
+(`_is_public_http_url`) checks the *original* hostname's resolved IP but then
+fetches with `follow_redirects=True` without re-checking each redirect hop —
+a compromised or malicious public URL can 302 the fetcher straight at
+`169.254.169.254` or an internal service. Separately, the rate limiter
+(`_client_ip`) trusts a client-supplied `X-Forwarded-For` unconditionally, so
+anyone can spoof a fresh "IP" per request and both bypass the 20 req/min cap
+and leak memory into `_request_log` forever. **Recommendation:** re-validate
+every redirect hop against the same public-IP allowlist (or pin the
+connection to the already-checked IP), and only trust `X-Forwarded-For` from
+a known trusted proxy, taking the right-most hop rather than the spoofable
+left-most one. Neither fix is architectural — both are containable to
+`api/main.py` — but both are "ship a live system to strangers and get burned"
+risk given this is a real endpoint the extension calls on every scanned post.
+
+**No regression net anywhere:** zero tests, no CI, and `.gitignore` actively
+excludes `api/smoke_*.py`/`api/test_*.py`, so even a developer's own local
+sanity scripts never become a shared regression guard. Given how much of this
+document is "the code quietly does something different from the plan,"
+that's not a coincidence — a test asserting `fuse()`'s behavior on a
+missing-modality post, or a test asserting `/scan/extension`'s SSRF guard
+rejects a redirect to a private IP, would have caught several of these gaps
+mechanically instead of via a manual read-through. **Recommendation:** a
+minimal pytest suite (fusion edge cases, `/scan*` route smoke tests, SSRF/
+rate-limit unit tests with mocked DNS) wired into a basic GitHub Actions
+workflow, before the next round of changes rather than after.
+
+**Two modules with no trained checkpoint behind the confident-sounding
+plan language:** `models/text/`, `models/image/`, `models/video/` were all
+just `.gitkeep` scaffolding (the image one is populated at runtime; text and
+video never got a real fine-tuned checkpoint at all). The video module's
+`forensics.py` docstrings assert its ELA/optical-flow thresholds are
+"empirically calibrated on FaceForensics++," but no calibration script,
+notebook, or dataset backing that claim exists anywhere in the repo — the
+numbers are uncalibrated guesses wearing a validated-sounding comment.
+**Recommendation:** either do the calibration/fine-tuning work and cite it,
+or strip the claim down to "hand-tuned starting thresholds, not yet
+validated against a labeled set" — an unverifiable claim of rigor is worse
+for a thesis defense than an honest gap.
+
+**Evaluation harness (build step 9) doesn't exist yet**, which means every
+number in points 1-7 above (and the Bento section's F1/latency figures on the
+public web page) is argued from code-reading and worked examples, not from a
+confusion matrix run against a held-out set. This is the single biggest gap
+standing between "the architecture is defensible" and "the architecture is
+proven" — until it exists, none of the ≥90% F1 / <2s latency / ≥68 SUS
+targets in CLAUDE.md are actually measured claims.
+
+**The Render free-tier wall is a capacity loophole, not a code loophole:**
+importing `torch`+`torchvision`+`transformers`+`opencv` alone consumes ~85%
+of Render's 512MB free-tier ceiling before any inference runs, and one
+forward pass (let alone one with GradCAM) blows well past it. No further
+code-level trick (fp16 was tried and reverted after producing `NaN` logits on
+real images; meta-device + `assign=True` loading was the one fix that
+actually helped, saving ~750MB) closes a gap this architectural. The three
+real options are: (1) run inference on your own machine behind a free tunnel
+(Cloudflare Tunnel/ngrok — zero cost, but requires the machine to be on), (2)
+a small paid tier (~$7/mo Render Starter, ~2GB RAM — directly solves it but
+reopens the "no payments" constraint), or (3) a genuinely lighter runtime
+(quantized ONNX Runtime instead of full PyTorch — plausible but an
+unattempted rewrite with no fit guarantee). See
+`docs/render-deployment-log.md` for the full profiling table and commit-by-
+commit story, and `PROBLEMS.md` for this written up as an open decision the
+project owner needs to make before the next deploy attempt.

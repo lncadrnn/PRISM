@@ -50,6 +50,19 @@
   const Z_INDEX = 2147483641; // one above the badge
   const PANEL_WIDTH = 380;
 
+  // Only http(s) links may ever be rendered as an <a href>. Blocks
+  // javascript:/data: URLs from executing in the host page's context if a
+  // source URL is ever less trusted than today's backend-only payload.
+  function isSafeHttpUrl(url) {
+    if (typeof url !== "string") return false;
+    try {
+      const parsed = new URL(url, location.href);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Styles injected into the shadow root. Keep EQUIVALENT to ui/sidebar.css.
   // -------------------------------------------------------------------------
@@ -371,7 +384,7 @@
     let html = `<div class="prism-sb-section"><h3 class="prism-sb-section-title">Verified Source Links</h3>`;
     if (Array.isArray(sources) && sources.length) {
       for (const s of sources) {
-        if (!s || !s.url) continue;
+        if (!s || !s.url || !isSafeHttpUrl(s.url)) continue;
         html +=
           `<a class="prism-sb-source" href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">` +
           (s.publisher ? `<div class="prism-sb-source-pub">${escapeHtml(s.publisher)}</div>` : "") +

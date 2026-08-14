@@ -32,9 +32,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../api"))
 from modules.text.model import MODEL_ID
 
-# Training uses 256 tokens (half of inference MAX_LENGTH=512) for faster
-# mini-batch iteration and to reduce GPU memory pressure during fine-tuning.
-# The model can still handle up to 512 tokens at inference time.
+# Training and inference both use 256 tokens (api/modules/text/model.py MAX_LENGTH).
+# Kept as a separate constant here (rather than importing MAX_LENGTH directly)
+# so training-time sequence length can be tuned independently if needed.
 TRAIN_MAX_LENGTH = 256
 
 LABEL_MAP = {"real": 0, "fake": 1}

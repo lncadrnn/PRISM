@@ -64,9 +64,6 @@ interface PhotoSample {
   id: number;
   name: string;
   url: string;
-  anomaly: string;
-  confidence: number;
-  camRegion: { top: string; left: string; width: string; height: string };
 }
 
 interface VideoSample {
@@ -201,9 +198,6 @@ export default function PrismLanding() {
             id: 99,
             name: file.name,
             url: previewUrl,
-            anomaly: "",
-            confidence: 0,
-            camRegion: { top: "0%", left: "0%", width: "0%", height: "0%" },
           });
           setSelectedPhotoFile(file);
           scanPhoto(file, previewUrl);
@@ -518,9 +512,6 @@ export default function PrismLanding() {
         id: 99,
         name: file.name,
         url: previewUrl,
-        anomaly: "",
-        confidence: 0,
-        camRegion: { top: "0%", left: "0%", width: "0%", height: "0%" },
       });
       setSelectedPhotoFile(file);
     };
@@ -1046,11 +1037,18 @@ export default function PrismLanding() {
                   className="absolute w-24 md:w-56 aspect-[3/4] group bg-[#F4F1EA] dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden cursor-crosshair shadow-md hover:shadow-2xl transition-all duration-500"
                 >
                   {/* Portrait Asset */}
-                  <img 
-                    src={card.avatar} 
-                    alt={card.name} 
-                    className="w-full h-full object-cover filter saturate-75 group-hover:saturate-100 transition-all duration-500" 
+                  <img
+                    src={card.avatar}
+                    alt={card.name}
+                    className="w-full h-full object-cover filter saturate-75 group-hover:saturate-100 transition-all duration-500"
                   />
+
+                  {/* Illustrative-only badge: distinguishes marketing samples from live /scan results */}
+                  <div className="absolute top-1 left-1 md:top-2 md:left-2 px-1.5 py-0.5 rounded-full bg-slate-950/70 backdrop-blur-sm z-10 pointer-events-none">
+                    <span className="text-[5px] md:text-[7px] font-mono font-bold tracking-widest uppercase text-white/80">
+                      Illustrative
+                    </span>
+                  </div>
 
                   {/* Glassmorphism Border Shadow */}
                   <div className="absolute inset-0 border-2 border-transparent group-hover:border-[#3CC4DB]/60 rounded-2xl transition-colors pointer-events-none duration-500" />
