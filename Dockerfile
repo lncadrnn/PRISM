@@ -22,7 +22,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY api/requirements.txt ./api/requirements.txt
-RUN pip install --no-cache-dir -r api/requirements.txt
+# CPU-only torch/torchvision wheels first: the default PyPI build pulls in the
+# full CUDA/cuDNN runtime (hundreds of MB, unused on free-tier hosts with no
+# GPU) and its larger import footprint contributed to OOM kills on Render's
+# 512MB free instance. Installed before requirements.txt so that file's
+# torch>=.../torchvision>=... constraints are already satisfied and left alone.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch torchvision \
+    && pip install --no-cache-dir -r api/requirements.txt
 
 COPY api/ ./api/
 COPY models/ ./models/
