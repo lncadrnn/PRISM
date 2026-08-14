@@ -48,28 +48,25 @@ _HUB_MODEL_ID = "Organika/sdxl-detector"
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _MODEL_PATH_DEFAULT = os.path.join(_PROJECT_ROOT, "models", "image_detector.pt")
-_MODEL_PATH_FP16_DEFAULT = os.path.join(_PROJECT_ROOT, "models", "image_detector_fp16.pt")
 
 # The fine-tuned checkpoint is gitignored (see .gitignore) and never reaches a
 # host that builds from GitHub, so a deployment that wants the real GradCAM
 # model instead of the pretrained hub fallback points these at a Hugging Face
 # Hub *model* repo (plain free storage, not a Space) holding the weight file.
 _HF_IMAGE_MODEL_REPO = os.environ.get("PRISM_IMAGE_MODEL_REPO")
-_HF_IMAGE_MODEL_FILENAME_OVERRIDE = os.environ.get("PRISM_IMAGE_MODEL_FILENAME")
+_HF_IMAGE_MODEL_FILENAME = os.environ.get("PRISM_IMAGE_MODEL_FILENAME", "image_detector.pt")
 
 
-def _resolve_checkpoint_path(explicit_path: str | None, fp16: bool) -> str | None:
+def _resolve_checkpoint_path(explicit_path: str | None) -> str | None:
     """Return a local path to the fine-tuned checkpoint, or None to use the hub fallback."""
     if explicit_path and os.path.isfile(explicit_path):
         return explicit_path
-    local_default = _MODEL_PATH_FP16_DEFAULT if fp16 else _MODEL_PATH_DEFAULT
-    if os.path.isfile(local_default):
-        return local_default
+    if os.path.isfile(_MODEL_PATH_DEFAULT):
+        return _MODEL_PATH_DEFAULT
     if _HF_IMAGE_MODEL_REPO:
         from huggingface_hub import hf_hub_download
-        filename = _HF_IMAGE_MODEL_FILENAME_OVERRIDE or ("image_detector_fp16.pt" if fp16 else "image_detector.pt")
-        print(f"[ImageDetector] Downloading {filename} from {_HF_IMAGE_MODEL_REPO}")
-        return hf_hub_download(repo_id=_HF_IMAGE_MODEL_REPO, filename=filename)
+        print(f"[ImageDetector] Downloading {_HF_IMAGE_MODEL_FILENAME} from {_HF_IMAGE_MODEL_REPO}")
+        return hf_hub_download(repo_id=_HF_IMAGE_MODEL_REPO, filename=_HF_IMAGE_MODEL_FILENAME)
     return None
 
 # Older `transformers` releases (e.g. the version used to train on Kaggle)
@@ -168,30 +165,30 @@ class ImageDetector:
     def __init__(self, model_path: str | None = None, device: str | None = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Half-precision roughly halves the fine-tuned model's resident memory
-        # (376MB -> ~188MB) at the cost of some numeric precision — opt-in via
-        # env var for low-RAM deployments (e.g. Render's 512MB free tier);
-        # local dev / training stays fp32 by default.
-        self._fp16 = os.environ.get("PRISM_IMAGE_FP16", "").strip().lower() in ("1", "true", "yes")
-
         # Check for a locally fine-tuned checkpoint first (falls back to
         # downloading from PRISM_IMAGE_MODEL_REPO if set, see above).
-        path = _resolve_checkpoint_path(model_path, self._fp16)
+        path = _resolve_checkpoint_path(model_path)
         if path:
             self.mode = "local"
-            # pretrained=False: about to load_state_dict() a full fine-tuned
-            # checkpoint immediately below, so skip downloading the ImageNet
-            # backbones only to discard them (see CNNViTHybrid docstring).
-            self.model = CNNViTHybrid(pretrained=False)
-            if self._fp16:
-                self.model = self.model.half()
-            self.model.to(self.device)
-            state = torch.load(path, map_location=self.device, weights_only=True)
+            # Construct on the meta device (zero real memory for the ~376MB
+            # skeleton) and assign=True the loaded tensors directly into it,
+            # instead of allocating a real fp32 model then copying a separate
+            # fp32 state dict into it — that double-buffering (~750MB peak)
+            # was an OOM contributor on Render's 512MB free instance. Tried
+            # fp16 first to cut resident size instead; reverted after it
+            # produced NaN logits on real (non-synthetic) images — see git
+            # history. mmap=True lets the checkpoint's tensors page in from
+            # disk lazily rather than fully materializing upfront.
+            with torch.device("meta"):
+                self.model = CNNViTHybrid(pretrained=False)
+            state = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
             try:
-                self.model.load_state_dict(state)
+                self.model.load_state_dict(state, assign=True, strict=True)
             except RuntimeError:
                 state = {_remap_legacy_vit_key(k): v for k, v in state.items()}
-                self.model.load_state_dict(state)
+                self.model.load_state_dict(state, assign=True, strict=True)
+            if self.device != "cpu":
+                self.model.to(self.device)
             self.model.eval()
             self.gradcam = GradCAM(self.model.cnn_last_layer())
             self.pipe = None
@@ -237,8 +234,6 @@ class ImageDetector:
 
         # ---- Locally fine-tuned CNN-ViT hybrid ---------------------------
         tensor = _TRANSFORM(image).unsqueeze(0).to(self.device)
-        if self._fp16:
-            tensor = tensor.half()
         tensor.requires_grad_(True)
         self.gradcam.reset()
 
