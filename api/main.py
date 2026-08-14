@@ -63,13 +63,24 @@ detector: Optional[ImageDetector] = None
 text_detector: Optional[TextDetector] = None
 video_detector: Optional[VideoDetector] = None
 
+# Which modules this process loads. Defaults to all three for local dev
+# (`python main.py`); set to a subset (e.g. "image") when deploying each
+# module as its own low-memory Render service — a service not listed here
+# skips that detector entirely instead of loading it and getting OOM-killed.
+_ENABLED_MODULES = {
+    m.strip() for m in os.environ.get("PRISM_ENABLED_MODULES", "image,text,video").split(",") if m.strip()
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global detector, text_detector, video_detector
-    detector = ImageDetector()
-    text_detector = TextDetector()
-    video_detector = VideoDetector()
+    if "image" in _ENABLED_MODULES:
+        detector = ImageDetector()
+    if "text" in _ENABLED_MODULES:
+        text_detector = TextDetector()
+    if "video" in _ENABLED_MODULES:
+        video_detector = VideoDetector()
     yield
     detector = None
     text_detector = None

@@ -49,6 +49,25 @@ _HUB_MODEL_ID = "Organika/sdxl-detector"
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _MODEL_PATH_DEFAULT = os.path.join(_PROJECT_ROOT, "models", "image_detector.pt")
 
+# The fine-tuned checkpoint is gitignored (see .gitignore) and never reaches a
+# host that builds from GitHub, so a deployment that wants the real GradCAM
+# model instead of the pretrained hub fallback points these at a Hugging Face
+# Hub *model* repo (plain free storage, not a Space) holding the weight file.
+_HF_IMAGE_MODEL_REPO = os.environ.get("PRISM_IMAGE_MODEL_REPO")
+_HF_IMAGE_MODEL_FILENAME = os.environ.get("PRISM_IMAGE_MODEL_FILENAME", "image_detector.pt")
+
+
+def _resolve_checkpoint_path(explicit_path: str | None) -> str | None:
+    """Return a local path to the fine-tuned checkpoint, or None to use the hub fallback."""
+    path = explicit_path or _MODEL_PATH_DEFAULT
+    if path and os.path.isfile(path):
+        return path
+    if _HF_IMAGE_MODEL_REPO:
+        from huggingface_hub import hf_hub_download
+        print(f"[ImageDetector] Downloading {_HF_IMAGE_MODEL_FILENAME} from {_HF_IMAGE_MODEL_REPO}")
+        return hf_hub_download(repo_id=_HF_IMAGE_MODEL_REPO, filename=_HF_IMAGE_MODEL_FILENAME)
+    return None
+
 # Older `transformers` releases (e.g. the version used to train on Kaggle)
 # name ViT encoder-layer submodules differently from newer ones (query/key/value
 # -> q_proj/k_proj/v_proj, output.dense -> o_proj, intermediate/output.dense ->
@@ -145,9 +164,10 @@ class ImageDetector:
     def __init__(self, model_path: str | None = None, device: str | None = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Check for a locally fine-tuned checkpoint first.
-        path = model_path or _MODEL_PATH_DEFAULT
-        if path and os.path.isfile(path):
+        # Check for a locally fine-tuned checkpoint first (falls back to
+        # downloading from PRISM_IMAGE_MODEL_REPO if set, see above).
+        path = _resolve_checkpoint_path(model_path)
+        if path:
             self.mode = "local"
             self.model = CNNViTHybrid()
             self.model.to(self.device)
