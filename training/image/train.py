@@ -1,8 +1,9 @@
 """
 Fine-tuning script for the CNN-ViT hybrid image detector.
 
-Usage:
-    python training/image/train.py \
+Usage (run from the repo root — a plain `python training/image/train.py` fails
+with ModuleNotFoundError, since the script imports via the `training` package):
+    python -m training.image.train \
         --data data/image \
         --epochs 20 \
         --batch 32 \
@@ -10,10 +11,10 @@ Usage:
         --output models/image_detector.pt
 
 Resuming a run that got cut off (Kaggle/Colab session limit, crash, etc.):
-    python training/image/train.py \
+    python -m training.image.train \
         --data data/image --epochs 20 --batch 32 --lr 2e-4 \
         --output models/image_detector.pt \
-        --resume models/image_detector.train_state.pt
+        --resume models/image_detector.pt.train_state.pt
 
 Strategy (from PRISM research):
   1. Freeze both backbones for the first N warmup epochs — train only the fusion head.

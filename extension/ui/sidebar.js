@@ -26,7 +26,6 @@
  * Public API — window.prismSidebar:
  *   open(verdict, context)  context = { postId, postEl, text? }
  *   close()
- *   isOpen()
  * `open` is idempotent: there is only ever ONE host node in the DOM; calling
  * open again re-renders that single panel with the new verdict.
  * ===========================================================================
@@ -41,7 +40,7 @@
     // calls never throw.
     // eslint-disable-next-line no-console
     console.error("[PRISM] sidebar.js: window.prismVerdict missing — load order?");
-    window.prismSidebar = { open() {}, close() {}, isOpen() { return false; } };
+    window.prismSidebar = { open() {}, close() {} };
     return;
   }
 
@@ -68,8 +67,8 @@
   // -------------------------------------------------------------------------
   const PRISM_SIDEBAR_CSS = `
 .prism-sb-root {
-  --prism-fake:#e5484d; --prism-real:#30a46c; --prism-ai:#8e4ec6;
-  --prism-human:#0091ff; --prism-unknown:#7a7d85; --prism-scanning:#9aa0ab;
+  --prism-fake:#e5484d; --prism-real:#30a46c;
+  --prism-unknown:#7a7d85; --prism-scanning:#9aa0ab;
   --prism-bg:#0d1b24; --prism-bg-panel:#11242f; --prism-bg-raised:#163140;
   --prism-border:#23404f; --prism-text:#e7eef2; --prism-text-dim:#9fb3bd;
   --prism-accent:#3fb6c9;
@@ -528,10 +527,5 @@
     opened = false;
   }
 
-  /** Whether the panel is currently open. */
-  function isOpen() {
-    return opened;
-  }
-
-  window.prismSidebar = { open, close, isOpen };
+  window.prismSidebar = { open, close };
 })();

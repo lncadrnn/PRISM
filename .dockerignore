@@ -4,12 +4,12 @@
 .claude
 CLAUDE.md
 loopholes.md
+PROBLEMS.md
 docs
 web
 extension
 training
 data
-FakeNewsNet
 node_modules
 __pycache__
 *.pyc

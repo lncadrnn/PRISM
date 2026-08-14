@@ -225,7 +225,7 @@ def main():
         if val_f1 > best_f1:
             best_f1 = val_f1
             torch.save(model.state_dict(), best_path)
-            print(f"  -> New best F1 {best_f1:.4f} — saved to {best_path}")
+            print(f"  -> New best F1 {best_f1:.4f} -- saved to {best_path}")
 
     print(f"\nTraining complete. Best val F1: {best_f1:.4f}")
     print("\nFinal classification report:")

@@ -79,7 +79,3 @@ desktop.ini
 # Logs
 *.log
 logs/
-
-# Supabase local
-supabase/.branches/
-supabase/.temp/

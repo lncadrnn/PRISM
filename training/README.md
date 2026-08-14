@@ -30,7 +30,7 @@ On Colab/Kaggle, CUDA torch is pre-installed — skip the CPU index URL and just
 
 ### 1. Prepare data
 
-FakeNewsNet ships under `FakeNewsNet/dataset/` (4 CSVs). Convert it into the
+FakeNewsNet ships under `data/FakeNewsNet/dataset/` (4 CSVs). Convert it into the
 `data/text/{real,fake}.csv` layout the dataset expects:
 
 ```bash

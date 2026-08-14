@@ -10,7 +10,7 @@ Two operating modes:
    as a supplementary signal and explanation.
 
 2. FINE-TUNED LOCAL (weights present at models/image_detector.pt):
-   The project's own CNN-ViT hybrid (EfficientNet-B4 + ViT), trained via
+   The project's own CNN-ViT hybrid (EfficientNet-B3 + ViT), trained via
    training/image/train.py on FaceForensics++ / GAN + diffusion datasets.
    Enables full GradCAM heatmap explanation. Takes over automatically once
    the checkpoint exists.

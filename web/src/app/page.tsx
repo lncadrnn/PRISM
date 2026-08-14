@@ -21,8 +21,6 @@ import {
   User,
   ExternalLink,
   ChevronRight,
-  Menu,
-  X,
   Sun,
   Moon
 } from "lucide-react";

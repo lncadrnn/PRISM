@@ -122,7 +122,7 @@ For **video posts** (Reels, TikTok), PRISM sends the video poster/thumbnail to t
 
 ```
 extension/
-├── manifest.json               MV3, least-privilege (activeTab, scripting, storage)
+├── manifest.json               MV3, least-privilege (storage + the 4 host permissions)
 ├── lib/verdict.js              window.prismVerdict — shared two-axis contract + tokens
 ├── ui/
 │   ├── badge.js / badge.css    window.prismBadge   — two-segment pill + shared hover tooltip
@@ -212,7 +212,6 @@ PRISM/
 ├── web/                      # Next.js 16 web app (App Router, TypeScript)
 │   └── src/app/
 ├── data/                     # datasets (git-ignored)
-├── supabase/                 # SQL migrations, Edge Functions
 └── docs/                     # PRISM.pdf and architecture notes
 ```
 
@@ -275,8 +274,10 @@ Response:
     "image": { "label", "confidence", "explanation": { "method", "signals", "heatmap_b64", "note" } }    | null,
     "video": { ... } | null
   },
-  "explanation": { "fusion_score", "modules_used", "weights_applied" } }
+  "explanation": { "fusion_score", "modules_used", "modules_abstained", "weights_applied" } }
 ```
+
+If every present modality abstains (returns `label: "unknown"`), `label` is `"unknown"` and `explanation` instead takes the shape `{ "error": "no conclusive modalities", "abstained": [...] }`.
 
 `modules.text` drives the **Credibility** axis; `modules.image` / `modules.video` drive the **Authenticity** axis.
 
@@ -311,7 +312,7 @@ Only modalities present in a post are included — absent modalities are not pen
 
 ## Privacy & Security
 
-- **Least privilege:** extension requests only `activeTab`, `scripting`, `storage`, and host access to the four supported domains. No `<all_urls>`, no `tabs`, no browsing history.
+- **Least privilege:** extension requests only `storage` and host access to the four supported domains. No `<all_urls>`, no `tabs`, no `activeTab`/`scripting`, no browsing history.
 - **SSRF guards:** the API only fetches public HTTP(S) URLs (blocks loopback, private ranges, reserved / multicast addresses).
 - **CORS:** API accepts requests only from `chrome-extension://`, `moz-extension://`, and localhost — no wildcard.
 - **Session cache:** verdicts are stored in `chrome.storage.session` and cleared when the browser restarts.

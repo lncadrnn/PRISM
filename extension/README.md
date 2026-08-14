@@ -62,7 +62,7 @@ prevents host-page CSS from distorting the forensic UI. The panel shows:
 
 ```
 extension/
-├── manifest.json               MV3, least-privilege (activeTab, scripting, storage)
+├── manifest.json               MV3, least-privilege (storage + the 4 host permissions)
 ├── lib/verdict.js              window.prismVerdict — shared two-axis contract + tokens
 ├── ui/
 │   ├── badge.js / badge.css    window.prismBadge   — two-segment pill + shared hover tooltip
@@ -174,8 +174,8 @@ drive the **Authenticity** axis. Each module's `confidence` is `P(fake)` /
 
 ## Privacy & security
 
-- **Least privilege:** only `activeTab`, `scripting`, `storage`, and host access
-  to the four supported domains. No `<all_urls>`, no `tabs`, no browsing history.
+- **Least privilege:** only `storage` and host access to the four supported
+  domains. No `<all_urls>`, no `tabs`, no `activeTab`/`scripting`, no browsing history.
 - Verdicts are cached in `chrome.storage.session` (cleared on browser restart).
 - The API performs SSRF-guarded, size-capped server-side image fetches (blocks
   loopback, private ranges, reserved / multicast addresses).

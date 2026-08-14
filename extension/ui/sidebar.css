@@ -19,8 +19,6 @@
   /* token mirror — single source kept equal to window.prismVerdict.TOKENS */
   --prism-fake: #e5484d;
   --prism-real: #30a46c;
-  --prism-ai: #8e4ec6;
-  --prism-human: #0091ff;
   --prism-unknown: #7a7d85;
   --prism-scanning: #9aa0ab;
   --prism-bg: #0d1b24;

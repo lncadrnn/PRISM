@@ -30,9 +30,7 @@ from lime.lime_text import LimeTextExplainer as _LimeCore
 
 from .patterns import analyze as pattern_analyze
 
-# Label constants (must match model training convention)
-LABEL_REAL = 0
-LABEL_FAKE = 1
+# Class order must match model training convention
 CLASS_NAMES = ["real", "fake"]
 
 

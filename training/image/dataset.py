@@ -14,7 +14,6 @@ Both GAN and diffusion paradigms must be covered in the fake/ split —
 artifact patterns differ between them (Park et al., 2024).
 """
 
-import os
 from pathlib import Path
 
 import torch

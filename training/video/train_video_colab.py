@@ -58,7 +58,7 @@ def main() -> None:
 
     # 3. Call the existing trainer.
     sh([
-        sys.executable, os.path.join("training", "video", "train.py"),
+        sys.executable, "-m", "training.video.train",
         "--data", DATASET_PATH,
         "--epochs", str(EPOCHS),
         "--warmup-epochs", str(WARMUP_EPOCHS),

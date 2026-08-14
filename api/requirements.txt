@@ -3,7 +3,6 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 pydantic>=2.0.0
-python-dotenv>=1.0.0
 httpx>=0.27.0
 
 # AI / ML
@@ -22,9 +21,3 @@ lime>=0.2.0.1
 
 # Evaluation
 scikit-learn>=1.5.0
-
-# Data handling (text dataset / training-data prep)
-pandas>=2.0.0
-
-# Backend
-supabase>=2.10.0

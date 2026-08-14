@@ -1,13 +1,10 @@
 {
   "manifest_version": 3,
   "name": "PRISM — Multimodal Disinformation Shield",
-  "short_name": "PRISM",
   "version": "1.0.0",
   "description": "Passively scans Facebook, TikTok, X, and Threads posts for disinformation (Real/Fake) and AI-generated media (AI/Human) using the PRISM multimodal forensic system.",
 
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage"
   ],
 
@@ -74,8 +71,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "ui/badge.css",
-        "ui/sidebar.css",
         "icons/icon128.png"
       ],
       "matches": [

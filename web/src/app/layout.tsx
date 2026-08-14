@@ -26,11 +26,6 @@ export const metadata: Metadata = {
     { name: "Lee Adrian D. Noroña" },
     { name: "Christian B. Valenzuela" }
   ],
-  icons: {
-    icon: "/prism_tab_logo.png",
-    shortcut: "/prism_tab_logo.png",
-    apple: "/prism_tab_logo.png",
-  },
 };
 
 export default function RootLayout({

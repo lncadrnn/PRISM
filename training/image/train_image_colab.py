@@ -63,7 +63,7 @@ def main() -> None:
     # 3. Call the existing trainer, resuming automatically if a train-state
     #    file is present (e.g. copied back in from a prior cut-off session).
     cmd = [
-        sys.executable, os.path.join("training", "image", "train.py"),
+        sys.executable, "-m", "training.image.train",
         "--data", DATASET_PATH,
         "--epochs", str(EPOCHS),
         "--batch", str(BATCH),

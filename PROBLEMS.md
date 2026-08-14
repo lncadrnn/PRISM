@@ -171,6 +171,22 @@ explanation, unlike image's CAM heatmap or text's LIME highlighting.
 ELA/jitter score, return an annotated frame/crop), and extend `sidebar.js` to
 render it. Feature addition, left for a dedicated pass.
 
+### 2.5 Text module XAI claims "LIME + Anchors"; only LIME is implemented (medium)
+CLAUDE.md, `README.md`, and `extension/README.md` all describe the text
+module's explainability method as "LIME + Anchors" (word/phrase-level
+highlighting). `api/modules/text/explainer.py` only implements
+`LIMETextExplainer` plus a rule-based Filipino pattern analyzer
+(`patterns.py`); its returned `explanation.method` is literally
+`"pattern+LIME"`. There is no Anchors implementation anywhere in `api/` —
+`grep -rin anchor api/` matches nothing outside this docs claim. Same shape
+as 2.1/2.2: a plan that names two techniques, and an implementation that
+ships only one.
+**Recommendation:** either implement an Anchors explainer alongside LIME
+(the two are complementary — LIME gives word weights, Anchors gives
+if-then decision rules), or update CLAUDE.md/README.md/extension/README.md
+to say "LIME" only until Anchors is actually built. Feature-vs-docs
+decision, left for the project owner.
+
 ---
 
 ## 3. Security / reliability (QA)
@@ -283,3 +299,39 @@ badge on the marketing gallery in `web/src/app/page.tsx`, the
 `prism-next-temp` → `prism-web` rename in `web/package.json`, and the
 `javascript:`/`data:` URL-scheme gap in `extension/ui/sidebar.js`'s source
 links.
+
+A second cleanup pass (2026-08-14, multi-agent hygiene audit — dead
+code/files, doc drift, structure) additionally fixed: unused `LABEL_REAL`/
+`LABEL_FAKE` constants in `api/modules/text/explainer.py` and `isOpen()`
+in `extension/ui/sidebar.js`; the `EfficientNet-B4`
+docstring typo in `api/modules/image/detector.py` (actual backbone is B3);
+unused `supabase`/`python-dotenv`/`pandas` entries in `api/requirements.txt`;
+the stale `MODEL_IMAGE_PATH` var in `api/.env.example`; `video/detector.py`'s
+checkpoint-path resolution now matches the `_PROJECT_ROOT` pattern used by
+the other two detectors; the undocumented `modules_abstained` field and
+missing `supabase/` directory in `README.md`; the extension's unused
+`activeTab`/`scripting` permissions, unused `web_accessible_resources`
+entries, dead `--prism-ai`/`--prism-human` CSS variables, and vestigial
+`short_name` manifest key; the web app's broken `/prism_tab_logo.png`
+favicon reference, the resulting orphaned `prism_logo.png` duplicate, and
+unused `Menu`/`X` icon imports; stale `python training/<module>/train.py`
+usage docs and a wrong resume-checkpoint filename (should be
+`-m training.<module>.train`, which is what actually works); the Colab
+launcher scripts (`train_image_colab.py`/`train_video_colab.py`) invoking
+the trainer with that same broken direct-path form; non-ASCII
+arrow/em-dash characters in `training/text/train.py` and
+`training/video/train.py`'s "New best F1" print (the same
+`UnicodeEncodeError`-on-Windows bug already fixed once in
+`training/image/train.py`); a missing shuffle-before-split in
+`training/video/train.py` that would have produced a heavily class-skewed
+validation set (real-then-fake dataset ordering, sliced unshuffled — same
+failure mode `training/image/train.py` already guards against) plus its
+now-unused `random_split` import; missing per-batch progress logging in
+`training/video/train.py`'s training loop; an unused `import os` in
+`training/image/dataset.py`; and dead/inconsistent root config
+(`.gcloudignore` for an abandoned GCP deployment path, redundant
+`FakeNewsNet` ignore lines, inert `supabase/.branches`+`supabase/.temp`
+gitignore rules, `PROBLEMS.md` missing from `.dockerignore` alongside
+`loopholes.md`). One new doc/architecture gap was found and added above
+rather than silently patched: **2.5**, the "LIME + Anchors" claim when only
+LIME is implemented.

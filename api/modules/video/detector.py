@@ -46,9 +46,8 @@ from schemas.verdict import VerdictResponse
 MAX_FRAMES = 32           # maximum frames sampled per video
 _FRAME_SIZE = (224, 224)  # spatial resize for the learned encoder
 
-_MODEL_PATH_DEFAULT = os.path.join(
-    os.path.dirname(__file__), "../../../models/video_detector.pt"
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+_MODEL_PATH_DEFAULT = os.path.join(_PROJECT_ROOT, "models", "video_detector.pt")
 
 
 # ---------------------------------------------------------------------------

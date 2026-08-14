@@ -1,8 +1,9 @@
 """
 Fine-tuning script for the PRISM video forensics module.
 
-Usage:
-    python training/video/train.py \\
+Usage (run from the repo root — a plain `python training/video/train.py` fails
+with ModuleNotFoundError, since the script imports via the `training` package):
+    python -m training.video.train \\
         --data data/video \\
         --epochs 20 \\
         --warmup-epochs 5 \\
@@ -37,11 +38,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import sys
+import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset, random_split
+from torch.utils.data import DataLoader, Subset
 from torchvision import models
 from sklearn.metrics import f1_score, classification_report
 
@@ -137,8 +140,10 @@ def train_epoch(
     """
     model.train()
     total_loss, correct, total = 0.0, 0, 0
+    n_batches = len(loader)
+    t0 = time.time()
 
-    for clips, labels in loader:
+    for i, (clips, labels) in enumerate(loader):
         # clips: (B, F, 3, 224, 224)   labels: (B,)
         B, F, C, H, W = clips.shape
         clips = clips.to(device)
@@ -157,6 +162,17 @@ def train_epoch(
         total_loss += loss.item() * B
         correct += (logits.argmax(1) == labels).sum().item()
         total += B
+
+        # Per-batch progress + flush=True so a genuine Kaggle/Colab hang (frozen
+        # log output) is distinguishable from slow-but-working training — see
+        # training/image/process.md, where this exact diagnostic was needed.
+        if i % 10 == 0 or i == n_batches - 1:
+            elapsed = time.time() - t0
+            print(
+                f"    batch {i+1}/{n_batches}  loss={loss.item():.4f}  "
+                f"elapsed={elapsed:.1f}s  ({elapsed / (i + 1):.2f}s/batch)",
+                flush=True,
+            )
 
     return total_loss / total, correct / total
 
@@ -217,7 +233,11 @@ def main() -> None:
     train_n = len(full_ds) - val_n
 
     # Determine the split indices once, then apply them to both dataset variants.
+    # Shuffle before slicing: VideoForensicsDataset appends all "real" samples
+    # before all "fake" samples, so an unshuffled tail slice would make the
+    # validation split almost entirely one class (mirrors training/image/train.py).
     all_indices = list(range(len(full_ds)))
+    random.Random(42).shuffle(all_indices)
     train_indices = all_indices[:train_n]
     val_indices = all_indices[train_n:]
 
@@ -280,7 +300,7 @@ def main() -> None:
         if val_f1 > best_f1:
             best_f1 = val_f1
             torch.save(model.state_dict(), best_path)
-            print(f"  → New best F1 {best_f1:.4f} — saved to {best_path}")
+            print(f"  -> New best F1 {best_f1:.4f} -- saved to {best_path}")
 
     print(f"\nTraining complete. Best val F1: {best_f1:.4f}")
     print("\nFinal classification report:")
